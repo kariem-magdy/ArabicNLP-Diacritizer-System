@@ -28,7 +28,7 @@ class DiacritizationDataset(Dataset):
         if normalize_options is None:
             normalize_options = {
                 "normalize_hamza": True, 
-                "remove_tatweel": True, 
+                "remove_tatweel": False, 
                 "lower_latin": True, 
                 "remove_punctuation": True
             }
