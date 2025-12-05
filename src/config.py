@@ -18,7 +18,7 @@ class Config:
     lstm_hidden: int = 256
     lstm_layers: int = 2
     bilstm_dropout: float = 0.3
-    batch_size: int = 128
+    batch_size: int = 32
     epochs: int = 20
     lr: float = 1e-3
 
