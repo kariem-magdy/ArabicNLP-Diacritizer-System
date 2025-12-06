@@ -1,8 +1,7 @@
-# src/train/train_transformer.py
 import os
 import torch
 import logging
-from ..data.dataset import DiacritizationDataset
+from datasets import Dataset
 from transformers import (
     AutoTokenizer, 
     AutoModelForTokenClassification, 
@@ -20,7 +19,6 @@ def run():
     os.makedirs(cfg.models_dir, exist_ok=True)
     
     # 1. Load Mappings
-    # We rely on the label map created by preprocess.py to handle Shadda/Vowels correctly
     label2idx_path = os.path.join(cfg.outputs_dir, "processed/label2idx.json")
     char2idx_path = os.path.join(cfg.outputs_dir, "processed/char2idx.json")
     
@@ -28,47 +26,48 @@ def run():
         raise FileNotFoundError("Run preprocessing first to generate label2idx.json")
         
     label2idx = load_json(label2idx_path)
-    char2idx = load_json(char2idx_path) # Loaded just for parsing context if needed
+    char2idx = load_json(char2idx_path) 
     
-    idx2label = {v: k for k, v in label2idx.items()}
+    idx2label = {int(v): k for k, v in label2idx.items()}
     label_list = [idx2label[i] for i in range(len(idx2label))]
     
     logger.info(f"Loaded {len(label2idx)} labels.")
 
-    # 2. Prepare Data using Robust Preprocessor
-    # We parse the files using the SAME logic as BiLSTM
-    logger.info("Parsing Train Data...")
-    train_entries = parse_file_to_entries(cfg.train_file, char2idx, label2idx)
-    
-    logger.info("Parsing Val Data...")
-    val_entries = parse_file_to_entries(cfg.val_file, char2idx, label2idx)
+    # 2. Prepare Data
+    # Use same normalization as BiLSTM to ensure consistency
+    norm_opts = {
+        "normalize_hamza": True, 
+        "remove_tatweel": False, 
+        "lower_latin": True, 
+        "remove_punctuation": True
+    }
 
-    # Convert to HF Dataset format
-    # Transformer expects text input, but for char-level alignment we usually feed 
-    # space-separated characters or use `is_split_into_words=True` with list of chars.
+    logger.info("Parsing Train Data with Normalization...")
+    train_entries = parse_file_to_entries(cfg.train_file, char2idx, label2idx, normalization_options=norm_opts)
     
+    logger.info("Parsing Val Data with Normalization...")
+    val_entries = parse_file_to_entries(cfg.val_file, char2idx, label2idx, normalization_options=norm_opts)
+
     def format_for_hf(entries):
         return {
-            "tokens": [list(e['raw']) for e in entries], # List of chars
-            "ner_tags": [e['label_ids'] for e in entries] # List of label IDs
+            "tokens": [list(e['raw']) for e in entries], 
+            "ner_tags": [e['label_ids'] for e in entries]
         }
 
-    train_ds = DiacritizationDataset.from_dict(format_for_hf(train_entries))
-    val_ds = DiacritizationDataset.from_dict(format_for_hf(val_entries))
+    train_ds = Dataset.from_dict(format_for_hf(train_entries))
+    val_ds = Dataset.from_dict(format_for_hf(val_entries))
 
     # 3. Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(cfg.transformer_model_name, use_fast=True)
 
-    # 4. Tokenization & Alignment Function
-    # Since we treat every character as a "word" (token), we need to ensure the BERT tokenizer
-    # aligns its subwords to our characters.
+    # 4. Alignment (Crucial for char-level tasks)
     def tokenize_and_align_labels(examples):
         tokenized_inputs = tokenizer(
             examples["tokens"], 
             truncation=True, 
             is_split_into_words=True, 
             max_length=512,
-            padding="max_length" # Pad here or via DataCollator
+            padding="max_length"
         )
 
         labels = []
@@ -77,15 +76,12 @@ def run():
             previous_word_idx = None
             label_ids = []
             for word_idx in word_ids:
-                # Special tokens mapped to -100
                 if word_idx is None:
-                    label_ids.append(-100)
-                # For the first subtoken of a character (usually the character itself)
+                    label_ids.append(-100) # Special tokens/Padding -> Masked
                 elif word_idx != previous_word_idx:
-                    label_ids.append(label[word_idx])
-                # For subsequent subtokens of the same character (rare if char-level, but possible)
+                    label_ids.append(label[word_idx]) # First sub-token -> Label
                 else:
-                    label_ids.append(label[word_idx]) # Or -100 if you want to label only head
+                    label_ids.append(-100) # Subsequent sub-tokens -> Masked
                 previous_word_idx = word_idx
             labels.append(label_ids)
 
@@ -103,13 +99,14 @@ def run():
         label2id=label2idx
     )
 
-    # 6. Metrics
+    # 6. Metrics (DER with Masking)
     def compute_metrics(p):
         predictions, labels = p
         predictions = torch.tensor(predictions).argmax(dim=2)
         labels = torch.tensor(labels)
 
-        # Remove ignored index (special tokens)
+        # Filter out -100. This IS the mask.
+        # It removes padding, special tokens, and sub-token continuations.
         true_predictions = [
             [label_list[p] for (p, l) in zip(prediction, label) if l != -100]
             for prediction, label in zip(predictions, labels)
@@ -119,7 +116,6 @@ def run():
             for prediction, label in zip(predictions, labels)
         ]
 
-        # Flatten for simple Accuracy/DER calculation
         flat_preds = [item for sublist in true_predictions for item in sublist]
         flat_labels = [item for sublist in true_labels for item in sublist]
         
@@ -128,15 +124,13 @@ def run():
         accuracy = correct / total if total > 0 else 0
         der = (1 - accuracy) * 100
         
-        return {
-            "accuracy": accuracy,
-            "der": der
-        }
+        return {"accuracy": accuracy, "der": der}
 
     # 7. Trainer
     training_args = TrainingArguments(
         output_dir=cfg.models_dir,
-        evaluation_strategy="epoch",
+        # FIX: Changed evaluation_strategy -> eval_strategy
+        eval_strategy="epoch", 
         save_strategy="epoch",
         learning_rate=cfg.transformer_lr,
         per_device_train_batch_size=cfg.transformer_batch_size,
@@ -147,7 +141,8 @@ def run():
         logging_dir=cfg.logs_dir,
         load_best_model_at_end=True,
         metric_for_best_model="der",
-        greater_is_better=False # Lower DER is better
+        greater_is_better=False,
+        report_to="none"
     )
 
     trainer = Trainer(
@@ -164,7 +159,7 @@ def run():
     trainer.train()
     
     trainer.save_model(os.path.join(cfg.models_dir, "best_transformer"))
-    logger.info("Model saved.")
+    logger.info(f"Model saved to {cfg.models_dir}")
 
 if __name__ == "__main__":
     run()
