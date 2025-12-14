@@ -1,131 +1,73 @@
 # src/app/app.py
-from flask import Flask, request, jsonify, render_template_string
-from ..infer.infer import DiacriticPredictor
-from ..infer.infer_transformer import TransformerPredictor
+import streamlit as st
+import os
 import sys
 
-app = Flask(__name__)
+# Ensure project root is in path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# --- Initialize Models ---
-print("------------------------------------------------")
-print("[INFO] Loading BiLSTM-CRF Model...")
-try:
-    bilstm_predictor = DiacriticPredictor()
-    print("[SUCCESS] BiLSTM Loaded.")
-except Exception as e:
-    print(f"[ERROR] Could not load BiLSTM: {e}")
-    bilstm_predictor = None
+from ..config import cfg
+from ..infer.infer_ensemble import EnsemblePredictor
 
-print("\n[INFO] Loading Transformer (AraBERT) Model...")
-try:
-    trans_predictor = TransformerPredictor()
-    print("[SUCCESS] Transformer Loaded.")
-except Exception as e:
-    print(f"[ERROR] Could not load Transformer: {e}")
-    trans_predictor = None
-print("------------------------------------------------")
+# Paths
+BILSTM_PATH = os.path.join(cfg.models_dir, "best_bilstm.pt")
+TRANSFORMER_PATH = os.path.join(cfg.models_dir, "best_transformer") 
+ARTIFACTS_PATH = cfg.processed_dir
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <meta charset="UTF-8">
-    <title>Arabic Diacritizer</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f9; padding: 20px; }
-        .container { max-width: 700px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h2 { color: #2c3e50; text-align: center; }
-        textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 1.2em; font-family: 'Courier New', Courier, monospace; resize: vertical; }
-        select { padding: 10px; width: 100%; margin-bottom: 20px; font-size: 1em; border-radius: 5px; border: 1px solid #ddd; }
-        button { background-color: #3498db; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.1em; width: 100%; }
-        button:hover { background-color: #2980b9; }
-        #output_text { margin-top: 20px; font-size: 1.4em; padding: 15px; border: 1px solid #eee; background: #fafafa; border-radius: 5px; min-height: 60px; line-height: 1.8; }
-        .label { font-weight: bold; margin-bottom: 5px; display: block; color: #555; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h2>نظام تشكيل النصوص العربية</h2>
-        
-        <label class="label">اختر النموذج (Choose Model):</label>
-        <select id="model_select">
-            <option value="bilstm">BiLSTM-CRF (Baseline)</option>
-            <option value="transformer">Transformer (AraBERT)</option>
-        </select>
+st.set_page_config(page_title="Arabic Diacritization System", layout="wide")
 
-        <label class="label">النص (Input Text):</label>
-        <textarea id="input_text" rows="5" placeholder="أدخل النص العربي غير المشكول هنا..."></textarea>
-        <br><br>
-        
-        <button onclick="diacritize()">تشكيل (Diacritize)</button>
-        
-        <label class="label" style="margin-top: 20px;">النتيجة (Result):</label>
-        <p id="output_text"></p>
-    </div>
-
-    <script>
-        async function diacritize() {
-            const text = document.getElementById('input_text').value;
-            const model = document.getElementById('model_select').value;
-            const outBox = document.getElementById('output_text');
-            
-            outBox.style.color = "#999";
-            outBox.textContent = "جاري المعالجة...";
-
-            try {
-                const response = await fetch('/predict', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({text: text, model: model})
-                });
-                const data = await response.json();
-                
-                if (data.error) {
-                    outBox.style.color = "red";
-                    outBox.textContent = "Error: " + data.error;
-                } else {
-                    outBox.style.color = "#000";
-                    outBox.textContent = data.diacritized;
-                }
-            } catch (err) {
-                outBox.style.color = "red";
-                outBox.textContent = "Connection Error";
-            }
-        }
-    </script>
-</body>
-</html>
-"""
-
-@app.route('/')
-def home():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    data = request.json
-    text = data.get('text', '')
-    model_type = data.get('model', 'bilstm')
-
-    if not text:
-        return jsonify({'diacritized': ''})
-    
+@st.cache_resource
+def get_ensemble_predictor():
     try:
-        if model_type == 'transformer':
-            if trans_predictor:
-                result = trans_predictor.predict(text)
-            else:
-                return jsonify({'error': 'Transformer model is not loaded correctly.'})
-        else:
-            if bilstm_predictor:
-                result = bilstm_predictor.predict(text)
-            else:
-                return jsonify({'error': 'BiLSTM model is not loaded correctly.'})
-                
-        return jsonify({'diacritized': result})
-        
+        predictor = EnsemblePredictor(BILSTM_PATH, TRANSFORMER_PATH, ARTIFACTS_PATH)
+        return predictor
     except Exception as e:
-        return jsonify({'error': str(e)})
+        st.error(f"Failed to load models: {e}")
+        return None
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+predictor = get_ensemble_predictor()
+
+st.title("🤖 Arabic Diacritization System")
+st.markdown("Ensemble of **BiLSTM-CRF** and **AraBERT**.")
+
+# Sidebar controls
+st.sidebar.header("Configuration")
+model_mode = st.sidebar.radio("Inference Mode", ["Ensemble", "BiLSTM Only", "Transformer Only"])
+
+ensemble_weight = 0.5
+if model_mode == "Ensemble":
+    ensemble_weight = st.sidebar.slider("Ensemble Weight (0=BiLSTM, 1=Transformer)", 0.0, 1.0, 0.5)
+elif model_mode == "BiLSTM Only":
+    ensemble_weight = 0.0
+elif model_mode == "Transformer Only":
+    ensemble_weight = 1.0
+
+# Input
+text_input = st.text_area("Enter Arabic Text:", "ذهب الطالب الى المدرسة", height=100)
+
+if st.button("Predict Tags"):
+    if not predictor:
+        st.error("Models not loaded.")
+    elif not text_input.strip():
+        st.warning("Enter text.")
+    else:
+        with st.spinner("Processing..."):
+            words, b_tags, t_tags, final_tags = predictor.predict(text_input, ensemble_weight)
+        
+        # 1. Visual Result
+        st.subheader("Result")
+        result_html = """<div style="font-size: 1.5rem; line-height: 2.0; direction: rtl; text-align: right;">"""
+        for w, tag in zip(words, final_tags):
+            color = "#f0f2f6" if tag == "O" else "#fff3cd" 
+            result_html += f'<span style="background-color: {color}; padding: 2px 5px; border-radius: 4px; margin: 0 3px;" title="{tag}">{w}</span>'
+        result_html += "</div>"
+        st.markdown(result_html, unsafe_allow_html=True)
+        
+        # 2. Table Comparison
+        if st.checkbox("Show Model Comparison (Last Char Tag)"):
+            st.table({
+                "Word": words,
+                "BiLSTM": b_tags,
+                "Transformer": t_tags,
+                "Ensemble": final_tags
+            })

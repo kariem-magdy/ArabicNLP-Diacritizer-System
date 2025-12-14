@@ -77,3 +77,82 @@ class FeatureManager:
         return torch.tensor(matrix, dtype=torch.float)
 
 feature_mgr = FeatureManager()
+
+# --- NEW CLASS: FEATURE GENERATOR FOR INFERENCE ---
+class FeatureGenerator:
+    """
+    Prepares tensors for BiLSTM inference by converting raw words 
+    into Character IDs and Word IDs (aligned per character).
+    """
+    def __init__(self, char2idx, word2idx=None, bow_vectorizer=None, tfidf_vectorizer=None, device='cpu'):
+        self.char2idx = char2idx
+        self.word2idx = word2idx
+        self.bow_vectorizer = bow_vectorizer
+        self.tfidf_vectorizer = tfidf_vectorizer
+        self.device = device
+        self.pad_idx = 0
+
+    def _get_word_ids(self, sentences_words):
+        # BiLSTM operates on Character Sequences. 
+        # We must repeat the Word ID for every character in that word.
+        if not self.word2idx: return None
+        
+        word_sequences = []
+        unk_idx = self.word2idx.get('<unk>', 1) 
+        
+        for words in sentences_words:
+            seq_ids = []
+            for w in words:
+                w_id = self.word2idx.get(w, unk_idx)
+                # CRITICAL: Repeat w_id for len(w) times to match char sequence
+                seq_ids.extend([w_id] * len(w))
+            word_sequences.append(seq_ids)
+        
+        # Padding
+        max_len = max(len(s) for s in word_sequences)
+        padded_sequences = [s + [self.pad_idx] * (max_len - len(s)) for s in word_sequences]
+        return torch.tensor(padded_sequences, dtype=torch.long, device=self.device)
+
+    def _get_char_ids(self, sentences_words):
+        char_sequences = []
+        unk_idx = self.char2idx.get('<unk>', 1) 
+
+        for words in sentences_words:
+            # Flatten words into characters
+            char_ids = [self.char2idx.get(c, unk_idx) for word in words for c in word]
+            char_sequences.append(char_ids)
+
+        # Padding
+        max_len = max(len(s) for s in char_sequences)
+        padded_sequences = [s + [self.pad_idx] * (max_len - len(s)) for s in char_sequences]
+        
+        # Mask
+        mask = [[1] * len(s) + [0] * (max_len - len(s)) for s in char_sequences]
+        
+        return (torch.tensor(padded_sequences, dtype=torch.long, device=self.device), 
+                torch.tensor(mask, dtype=torch.bool, device=self.device))
+
+    def _get_bow_features(self, sentences):
+        if not self.bow_vectorizer: return None
+        try:
+            bow_matrix = self.bow_vectorizer.transform(sentences).toarray()
+            return torch.tensor(bow_matrix, dtype=torch.float, device=self.device)
+        except: return None
+
+    def _get_tfidf_features(self, sentences):
+        if not self.tfidf_vectorizer: return None
+        try:
+            tfidf_matrix = self.tfidf_vectorizer.transform(sentences).toarray()
+            return torch.tensor(tfidf_matrix, dtype=torch.float, device=self.device)
+        except: return None
+
+    def generate_inputs_from_words(self, sentences_words):
+        # sentences_words: List[List[str]] (batch of tokenized sentences)
+        sentences = [" ".join(words) for words in sentences_words]
+        
+        chars_tensor, mask = self._get_char_ids(sentences_words)
+        word_ids_tensor = self._get_word_ids(sentences_words)
+        bow_tensor = self._get_bow_features(sentences)
+        tfidf_tensor = self._get_tfidf_features(sentences)
+        
+        return (chars_tensor, word_ids_tensor, bow_tensor, tfidf_tensor, mask)
