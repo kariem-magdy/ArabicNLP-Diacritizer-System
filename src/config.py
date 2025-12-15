@@ -23,13 +23,13 @@ class Config:
     # --- Model Defaults (BiLSTM) ---
     char_vocab_min_freq: int = 1
     char_emb_dim: int = 128
-    lstm_hidden: int = 256
-    lstm_layers: int = 2
-    bilstm_dropout: float = 0.3
+    lstm_hidden: int = 512
+    lstm_layers: int = 3
+    bilstm_dropout: float = 0.5
     
     # --- Training Defaults ---
-    batch_size: int = 32
-    epochs: int = 10
+    batch_size: int = 64
+    epochs: int = 20
     lr: float = 1e-3
 
     # --- Transformer Defaults (Preserved) ---
@@ -44,7 +44,7 @@ class Config:
     
     # 1. Trainable Word Embeddings
     use_word_emb: bool = True
-    word_emb_dim: int = 64
+    word_emb_dim: int = 300
     
     # 2. FastText Pre-trained Embeddings
     use_fasttext: bool = False
@@ -52,12 +52,12 @@ class Config:
     fasttext_dim: int = 300
     
     # 3. Bag of Words (BoW)
-    use_bow: bool = True
+    use_bow: bool = False
     bow_vocab_size: int = 2000
     bow_emb_dim: int = 32
     
     # 4. TF-IDF
-    use_tfidf: bool = True
+    use_tfidf: bool = False
     tfidf_vocab_size: int = 2000
     tfidf_emb_dim: int = 32
 

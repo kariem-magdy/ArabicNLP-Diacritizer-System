@@ -5,7 +5,7 @@ from src.preprocess import clean_line, extract_labels, build_char_vocab, build_l
 from src.features import feature_mgr
 
 # Options matching Dataset default
-NORM_OPTS = {"normalize_hamza": True, "remove_tatweel": True, "lower_latin": True, "remove_punctuation": True}
+NORM_OPTS = {"normalize_hamza": True, "remove_tatweel": True, "lower_latin": True, "remove_punctuation": False}
 
 def build_word_vocab(texts):
     print("[INFO] Building Word Vocabulary...")
