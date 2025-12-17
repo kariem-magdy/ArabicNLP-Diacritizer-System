@@ -23,7 +23,7 @@ class Config:
     # --- Model Defaults (BiLSTM) ---
     char_vocab_min_freq: int = 1
     char_emb_dim: int = 128
-    lstm_hidden: int = 512
+    lstm_hidden: int = 256
     lstm_layers: int = 3
     bilstm_dropout: float = 0.5
     
@@ -44,7 +44,7 @@ class Config:
     
     # 1. Trainable Word Embeddings
     use_word_emb: bool = True
-    word_emb_dim: int = 300
+    word_emb_dim: int = 128
     
     # 2. FastText Pre-trained Embeddings
     use_fasttext: bool = False

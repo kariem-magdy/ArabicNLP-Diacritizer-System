@@ -124,7 +124,7 @@ def generate_submission(input_file, output_file):
 
 if __name__ == "__main__":
     TEST_FILE = "data/test.txt"     
-    OUTPUT_CSV = "submission.csv"   
+    OUTPUT_CSV = "submission_3ntr_1.csv"   
     
     if os.path.exists(TEST_FILE):
         generate_submission(TEST_FILE, OUTPUT_CSV)
