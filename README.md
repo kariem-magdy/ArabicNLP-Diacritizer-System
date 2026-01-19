@@ -656,31 +656,6 @@ transformer_lr: float = 3e-5
 transformer_epochs: int = 4
 ```
 
----
-
-## Limitations
-
-1. **Sentence Length**: Maximum 512 tokens for Transformer model
-2. **Domain Specificity**: Performance may degrade on out-of-domain text
-3. **Dialectal Arabic**: Not trained on colloquial Arabic dialects
-4. **Rare Words**: Unknown words fall back to character-level prediction
-5. **Computational Cost**: Transformer inference is slower than BiLSTM
-6. **Error Propagation**: Normalization errors can affect downstream predictions
-
----
-
-## Future Improvements
-
-1. **Multi-task Learning**:  Joint diacritization + POS tagging
-2. **Character-level Transformers**:  CANINE or ByT5 for true character-level processing
-3. **Data Augmentation**:  Synthetic diacritization corruption for robustness
-4. **Domain Adaptation**:  Fine-tuning on specific domains (religious, legal, news)
-5. **Dialect Support**:  Extend to Egyptian, Levantine, Gulf Arabic
-6. **Confidence Scores**: Output prediction confidence for downstream filtering
-7. **Streaming Inference**: Support for long documents with sliding windows
-
----
-
 ## Contributing
 
 Contributions are welcome! Please follow these steps:
