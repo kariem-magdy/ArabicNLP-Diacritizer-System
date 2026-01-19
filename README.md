@@ -674,15 +674,4 @@ This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for d
 
 ---
 
-## Citation
-
-If you use this project in your research, please cite: 
-
-```bibtex
-@software{arabic_diacritizer_2024,
-  author = {Kariem Magdy},
-  title = {Arabic Text Diacritization System},
-  year = {2024},
-  url = {https://github.com/kariem-magdy/ArabicNLP-Diacritizer-System}
-}
 ```
